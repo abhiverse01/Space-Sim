@@ -1,5 +1,9 @@
 import pygame
 import math
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 # Constants
 G = 6.67430e-11  # Gravitational constant (m^3 kg^-1 s^-2)
@@ -13,7 +17,92 @@ YELLOW = (255, 255, 0)
 BLUE = (100, 100, 255)
 GREY = (200, 200, 200)
 
-# Define the class for the celestial bodies
+# Define the neural network model for gravity simulation
+class GravityNet(nn.Module):
+    def __init__(self):
+        super(GravityNet, self).__init__()
+        self.fc1 = nn.Linear(6, 64)
+        self.fc2 = nn.Linear(64, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, 2)  # Output force_x, force_y
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
+        x = self.fc4(x)
+        return x
+
+# Function to generate training data
+def generate_training_data(num_samples):
+    data = []
+    for _ in range(num_samples):
+        # Random positions and masses
+        x1, y1 = np.random.uniform(-1e11, 1e11, 2)
+        x2, y2 = np.random.uniform(-1e11, 1e11, 2)
+        mass1 = np.random.uniform(1e22, 1e30)
+        mass2 = np.random.uniform(1e22, 1e30)
+
+        # Calculate the force using Newton's law
+        distance_x = x2 - x1
+        distance_y = y2 - y1
+        distance = math.sqrt(distance_x ** 2 + distance_y ** 2)
+        distance = max(distance, 1e3)  # Prevent division by a very small distance
+        force = G * mass1 * mass2 / distance ** 2
+        theta = math.atan2(distance_y, distance_x)
+        force_x = math.cos(theta) * force
+        force_y = math.sin(theta) * force
+
+        # Normalize and create input-output pairs
+        input_data = [x1, y1, mass1, x2, y2, mass2]
+        input_data_normalized = np.array(input_data) / 1e11  # Normalize positions
+        output_data = [force_x, force_y]
+
+        data.append((input_data_normalized, output_data))
+
+    return data
+
+# Function to train the neural network
+def train_neural_network(data, epochs=1000):
+    model = GravityNet()
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)  # Lower learning rate
+
+    for epoch in range(epochs):
+        epoch_loss = 0
+        for input_data, output_data in data:
+            inputs = torch.tensor(input_data, dtype=torch.float32)
+            targets = torch.tensor(output_data, dtype=torch.float32)
+
+            optimizer.zero_grad()
+            outputs = model(inputs)
+
+            # Check for NaN in outputs
+            if torch.isnan(outputs).any():
+                print(f"NaN detected in outputs at epoch {epoch}, skipping this batch.")
+                continue
+
+            loss = criterion(outputs, targets)
+
+            # Check for NaN in loss
+            if torch.isnan(loss):
+                print(f"NaN detected in loss at epoch {epoch}, skipping this batch.")
+                continue
+
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+
+        if epoch % 100 == 0:
+            print(f'Epoch {epoch}, Average Loss: {epoch_loss / len(data)}')
+
+    return model
+
+# Initialize and train the neural network
+training_data = generate_training_data(100)
+model = train_neural_network(training_data)
+
+# Modify the HeavenlyBody class to use the neural network for force calculation
 class HeavenlyBody:
     def __init__(self, name, mass, x, y, radius, color):
         self.name = name
@@ -25,34 +114,29 @@ class HeavenlyBody:
         self.x_velocity = 0  # Velocity in m/s
         self.y_velocity = 0
         self.orbit = []
-        
+
     def draw(self, screen, zoom, pan_x, pan_y, show_orbit=True):
         x = (self.x * SCALE * zoom + screen.get_width() // 2) + pan_x
         y = (self.y * SCALE * zoom + screen.get_height() // 2) + pan_y
-        
-        # Draw the body if within the screen bounds
+
         pygame.draw.circle(screen, self.color, (int(x), int(y)), int(self.radius * zoom))
-        
+
         if show_orbit and len(self.orbit) > 2:
-            # Smooth the orbit line
             orbit_scaled = [(pos[0] * zoom + pan_x, pos[1] * zoom + pan_y) for pos in self.orbit]
             pygame.draw.aalines(screen, self.color, False, orbit_scaled, 1)
-        
+
     def attraction(self, other_body):
-        distance_x = other_body.x - self.x
-        distance_y = other_body.y - self.y
-        distance = math.sqrt(distance_x ** 2 + distance_y ** 2)
-        
-        if distance == 0:
-            return 0, 0  # Avoid division by zero
-        
-        force = G * self.mass * other_body.mass / distance ** 2
-        theta = math.atan2(distance_y, distance_x)
-        force_x = math.cos(theta) * force
-        force_y = math.sin(theta) * force
-        
+        # Use the neural network to predict the force
+        input_data = np.array([self.x, self.y, self.mass, other_body.x, other_body.y, other_body.mass]) / 1e11
+        input_tensor = torch.tensor(input_data, dtype=torch.float32)
+        force_x, force_y = model(input_tensor).detach().numpy()
+
+        # Check for NaN and replace with zero if found
+        if math.isnan(force_x) or math.isnan(force_y):
+            force_x, force_y = 0.0, 0.0
+
         return force_x, force_y
-    
+
     def update_position(self, bodies, screen, zoom, pan_x, pan_y):
         total_fx = total_fy = 0
         for body in bodies:
@@ -61,15 +145,15 @@ class HeavenlyBody:
             fx, fy = self.attraction(body)
             total_fx += fx
             total_fy += fy
-    
+
         # Update velocities based on acceleration
         self.x_velocity += (total_fx / self.mass) * TIMESTEP
         self.y_velocity += (total_fy / self.mass) * TIMESTEP
-    
+
         # Update positions based on velocity
         self.x += self.x_velocity * TIMESTEP
         self.y += self.y_velocity * TIMESTEP
-    
+
         # Append current position to orbit
         orbit_x = (self.x * SCALE * zoom + screen.get_width() // 2) + pan_x
         orbit_y = (self.y * SCALE * zoom + screen.get_height() // 2) + pan_y

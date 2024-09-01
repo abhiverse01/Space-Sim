@@ -13,7 +13,6 @@ YELLOW = (255, 255, 0)
 BLUE = (100, 100, 255)
 GREY = (200, 200, 200)
 
-# Define the class for the celestial bodies
 class HeavenlyBody:
     def __init__(self, name, mass, x, y, radius, color):
         self.name = name
@@ -25,34 +24,30 @@ class HeavenlyBody:
         self.x_velocity = 0  # Velocity in m/s
         self.y_velocity = 0
         self.orbit = []
-        
+
     def draw(self, screen, zoom, pan_x, pan_y, show_orbit=True):
         x = (self.x * SCALE * zoom + screen.get_width() // 2) + pan_x
         y = (self.y * SCALE * zoom + screen.get_height() // 2) + pan_y
-        
-        # Draw the body if within the screen bounds
+
         pygame.draw.circle(screen, self.color, (int(x), int(y)), int(self.radius * zoom))
-        
+
         if show_orbit and len(self.orbit) > 2:
-            # Smooth the orbit line
             orbit_scaled = [(pos[0] * zoom + pan_x, pos[1] * zoom + pan_y) for pos in self.orbit]
             pygame.draw.aalines(screen, self.color, False, orbit_scaled, 1)
-        
+
     def attraction(self, other_body):
         distance_x = other_body.x - self.x
         distance_y = other_body.y - self.y
         distance = math.sqrt(distance_x ** 2 + distance_y ** 2)
-        
-        if distance == 0:
-            return 0, 0  # Avoid division by zero
+        distance = max(distance, 1e3)  # Prevent division by a very small distance
         
         force = G * self.mass * other_body.mass / distance ** 2
         theta = math.atan2(distance_y, distance_x)
         force_x = math.cos(theta) * force
         force_y = math.sin(theta) * force
-        
+
         return force_x, force_y
-    
+
     def update_position(self, bodies, screen, zoom, pan_x, pan_y):
         total_fx = total_fy = 0
         for body in bodies:
@@ -61,15 +56,15 @@ class HeavenlyBody:
             fx, fy = self.attraction(body)
             total_fx += fx
             total_fy += fy
-    
+
         # Update velocities based on acceleration
         self.x_velocity += (total_fx / self.mass) * TIMESTEP
         self.y_velocity += (total_fy / self.mass) * TIMESTEP
-    
+
         # Update positions based on velocity
         self.x += self.x_velocity * TIMESTEP
         self.y += self.y_velocity * TIMESTEP
-    
+
         # Append current position to orbit
         orbit_x = (self.x * SCALE * zoom + screen.get_width() // 2) + pan_x
         orbit_y = (self.y * SCALE * zoom + screen.get_height() // 2) + pan_y
@@ -77,14 +72,12 @@ class HeavenlyBody:
         if len(self.orbit) > 500:
             self.orbit.pop(0)
 
-# Define the main function
 def main():
     pygame.init()
     width, height = 800, 800
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption("Heavenly Bodies Simulation")
     
-    # Define celestial bodies with adjusted sizes
     sun = HeavenlyBody("Sun", 1.989e30, 0, 0, 15, YELLOW)
     
     earth_distance = 1.496e11  # Distance from Sun to Earth in meters
@@ -103,7 +96,6 @@ def main():
     zoom = 1.0
     pan_x, pan_y = 0, 0
 
-    # Set up font for labels
     font = pygame.font.SysFont('Arial', 16)
     
     while run:
@@ -133,7 +125,6 @@ def main():
             body.update_position(bodies, screen, zoom, pan_x, pan_y)
             body.draw(screen, zoom, pan_x, pan_y, show_orbit)
 
-        # Draw labels at the top-right corner
         label_y_offset = 10
         for body in bodies:
             label = font.render(f"{body.name}: x={int(body.x/1e9)}Gm, y={int(body.y/1e9)}Gm", True, WHITE)

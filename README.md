@@ -127,4 +127,3 @@ This project is licensed under the MIT License. See the `LICENSE` file for more 
 ## Acknowledgments
 
 This project was inspired by the fascinating dynamics of celestial mechanics and aims to provide an educational and visual tool for understanding these complex interactions.
-
