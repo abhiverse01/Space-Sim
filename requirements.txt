@@ -1,0 +1,8 @@
+certifi==2024.7.4
+cffi==1.17.0
+numpy==2.1.0
+pycparser==2.22
+pygame==2.6.0
+PyOpenGL==3.1.5
+PyOpenGL-accelerate==3.1.5
+PyYAML==6.0
